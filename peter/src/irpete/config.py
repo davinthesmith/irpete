@@ -22,13 +22,18 @@ class Settings:
     port: int
 
 
+def resolve_db_path() -> Path:
+    """SQLite path from ``IRPETE_DB_PATH`` or the default under ``peter/data/``."""
+    db = os.environ.get("IRPETE_DB_PATH", "").strip()
+    return Path(db) if db else _repo_default_db_path()
+
+
 def load_settings() -> Settings:
     key = os.environ.get("IRPETE_API_KEY", "").strip()
     if not key:
         raise RuntimeError("IRPETE_API_KEY is required")
 
-    db = os.environ.get("IRPETE_DB_PATH", "").strip()
-    db_path = Path(db) if db else _repo_default_db_path()
+    db_path = resolve_db_path()
 
     host = os.environ.get("IRPETE_HOST", "127.0.0.1").strip() or "127.0.0.1"
     port_s = os.environ.get("IRPETE_PORT", "8000").strip()

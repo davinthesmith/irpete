@@ -42,3 +42,23 @@ def test_load_settings_rejects_bad_port(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("IRPETE_PORT", "nope")
     with pytest.raises(RuntimeError, match="IRPETE_PORT"):
         load_settings()
+
+
+def test_resolve_db_path_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``commit`` and the API must agree on the same file when ``IRPETE_DB_PATH`` is set."""
+    from irpete.config import resolve_db_path
+
+    p = tmp_path / "shared.db"
+    monkeypatch.setenv("IRPETE_DB_PATH", str(p))
+    assert resolve_db_path() == p
+
+
+def test_resolve_db_path_default_under_peter_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from irpete.config import resolve_db_path
+
+    monkeypatch.delenv("IRPETE_DB_PATH", raising=False)
+    p = resolve_db_path()
+    assert p.name == "irpete.db"
+    assert p.parent.name == "data"

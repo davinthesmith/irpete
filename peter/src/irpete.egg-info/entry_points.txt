@@ -1,0 +1,2 @@
+[console_scripts]
+irpete-capture = irpete.capture_cli:main

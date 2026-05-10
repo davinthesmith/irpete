@@ -7,15 +7,20 @@ Description-Content-Type: text/markdown
 Requires-Dist: fastapi>=0.110
 Requires-Dist: uvicorn[standard]>=0.29
 Requires-Dist: pydantic>=2.6
+Requires-Dist: typer>=0.12
 Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
 Requires-Dist: httpx>=0.27; extra == "dev"
 
-# IRPete — Peter (Stage 1)
+# IRPete — Peter (Stages 1–2)
 
 Peter exposes a versioned JSON **envelope** API backed by **SQLite (WAL)**. Authentication is a single shared **`IRPETE_API_KEY`** passed as `Authorization: Bearer <token>` on **every** `/v1` route, including **`GET /v1/health`**.
 
+Stage 2 adds the **`irpete-capture`** CLI on the Raspberry Pi: record TSOP pulse timings (RAM until `stop`), then **`validate`** / **`preview`** / **`commit`** using the **same** Pydantic rules and SQLite upsert as `POST /v1/signals`.
+
 Shared contract: [`plans/build/REFERENCE.md`](../plans/build/REFERENCE.md).
+
+**Auth errors:** missing or wrong `Authorization: Bearer` returns **401 Unauthorized** (with `WWW-Authenticate: Bearer`).
 
 ## Stage 1 — development run (HTTP, no TLS)
 
@@ -39,6 +44,49 @@ uvicorn irpete.app:create_app --factory --host 127.0.0.1 --port 8000
 
 The API listens on **`IRPETE_HOST` / `IRPETE_PORT`** (defaults **`127.0.0.1:8000`**). SQLite defaults to **`data/irpete.db`** under `peter/` when **`IRPETE_DB_PATH`** is unset.
 
+## Stage 2 — manual IR capture CLI (`irpete-capture`)
+
+After `pip install -e ".[dev]"` (or `pip install -e .`), the console script **`irpete-capture`** is available.
+
+### Hardware (TSOP)
+
+- **BCM GPIO 18** (physical pin 12 on the 40-pin header) is the default **data** line from the TSOP demodulator output (see REFERENCE §8).
+- Wire **VCC/GND** per your module’s datasheet (3V3 vs 5V modules differ).
+- **Permissions:** GPIO access on Raspberry Pi OS usually requires membership in the **`gpio`** group (then re-login) or running capture as root. Prefer `gpio` membership over blanket `sudo`.
+
+### Recording backend
+
+- **Preferred:** **`lgpio`** (Bookworm on Pi 4/5) for edge timestamps. Install the OS/Python package that provides `import lgpio` (e.g. `python3-lgpio` on Raspberry Pi OS).
+- **Fallbacks:** **`pigpio`** is common on older images; Pi 5 support varies—verify before relying on it. **`RPi.GPIO`** without dedicated edge timing is a poor fit for IR pulse capture.
+
+### Training workflow (example)
+
+Use one shell for Peter’s API (optional, for `GET` verification) and another for capture, or commit offline and query later.
+
+```bash
+# Terminal A — HTTP API (Stage 1 dev)
+export IRPETE_API_KEY=dev-secret
+export IRPETE_DB_PATH=/home/pi/irpete/data/irpete.db   # same DB the CLI will use
+python -m irpete.main
+```
+
+```bash
+# Terminal B — capture (Pi with TSOP on BCM 18)
+export IRPETE_DB_PATH=/home/pi/irpete/data/irpete.db
+irpete-capture start --pin 18 --carrier-hz 38000
+# Press a remote button, then:
+irpete-capture stop
+irpete-capture preview
+irpete-capture validate
+irpete-capture commit --label my_button
+```
+
+- **`start`** spawns a background recorder process; **`stop`** sends **SIGTERM**, writes **`candidate.json`** (pulse timings + `carrier_hz`) under the state directory — **no SQLite write yet**.
+- **`validate`** runs the same envelope validation as **`POST /v1/signals`** (including mark-first normalization).
+- **`commit`** upserts into SQLite by **`label`**; use the same **`IRPETE_DB_PATH`** as the API process so **`GET /v1/signals/{label}`** returns the new envelope.
+- Override state dir with **`--state-dir`** if you need multiple isolated sessions (default: `XDG_STATE_HOME/irpete/capture` or `~/.local/state/irpete/capture`).
+- **Pi 5:** if `start` fails to open GPIO, try **`--gpio-chip 4`** (chip index depends on the board).
+
 ## Tests
 
 ```bash
@@ -46,7 +94,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-## Envelope semantics (Stage 1)
+## Envelope semantics (Stages 1–2)
 
 - **`POST /v1/signals`** **upserts by `label`** (same label replaces the stored envelope).
 - **`raw_us` mark-first normalization:** IRremoteESP8266 `sendRaw` expects the first entry to be a **mark**. On POST, if the first duration is **greater than 50 ms**, it is treated as a leading idle gap and **removed once** so the stored array starts with a mark-oriented timing sequence. Values must fit **uint16** on the wire (1–65535 µs per element). Length is capped at **512** elements for v1.
