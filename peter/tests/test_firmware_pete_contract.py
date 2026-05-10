@@ -1,4 +1,4 @@
-"""Stage 5 guardrails: ``firmware/pete`` PlatformIO project matches REFERENCE / stage plan."""
+"""Firmware Pete guardrails: PlatformIO project matches REFERENCE / stage plans (5–6)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def test_platformio_ini_espressif8266_d1_mini_and_libs() -> None:
     assert "prep_secrets.py" in ini
 
 
-def test_secrets_example_has_wifi_peter_and_ca_pem() -> None:
+def test_secrets_example_has_wifi_peter_ca_and_pete_server_pem() -> None:
     ex = (_firmware_pete() / "include" / "secrets.h.example").read_text(encoding="utf-8")
     for needle in (
         "WIFI_SSID",
@@ -36,6 +36,10 @@ def test_secrets_example_has_wifi_peter_and_ca_pem() -> None:
         "PETER_HOST",
         "PETER_PORT",
         "PETER_LABEL",
+        "PETE_HTTPS_PORT",
+        "PETE_SIMULATE_BUSY_MS",
+        "PETE_SERVER_CERT_PEM",
+        "PETE_SERVER_PRIVATE_KEY_PEM",
         "BEGIN CERTIFICATE",
         "PETER_CA_PEM",
     ):
@@ -68,8 +72,14 @@ def test_readme_covers_wiring_flash_serial_and_hil() -> None:
         "pio run",
         "115200",
         "GET /v1/signals",
+        "POST /v1/play",
         "Bearer",
         "peter_tls_client",
+        "pete_https_play",
+        "--cacert",
+        "PETE_SIMULATE_BUSY_MS",
+        "401",
+        "409",
     ):
         assert needle in readme, f"README must mention {needle!r}"
 
@@ -97,26 +107,48 @@ def test_tls_client_maps_failure_http_codes_for_serial_debugging() -> None:
 
 
 def test_main_logs_wifi_failure_tls_http_success_exit_criteria() -> None:
-    """Maps to ``stage-05-pete-tls-client-ir.md`` §6: Wi-Fi fail, GET 200 + pulses, logged outcomes."""
+    """Wi‑Fi fail, Peter GET 200 + pulses + IR, HTTPS server init — Stage 5–6 §6."""
     main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
     assert "Wi-Fi: connection timed out" in main_cpp
     assert "Halting: fix Wi-Fi credentials" in main_cpp
     assert "HTTP 200: pulses=" in main_cpp
     assert "sendRaw" in main_cpp or "sendRaw complete" in main_cpp
+    assert "httpsPlayInit" in main_cpp
+    assert "httpsPlayPoll" in main_cpp
 
 
 def test_main_documents_boot_and_serial_trigger_modes() -> None:
-    """Stage 5: trigger choice (boot + Serial) documented and implemented."""
+    """Boot + Serial triggers + HTTPS poll loop."""
     main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
     assert "PETE_TRIGGER_ON_BOOT" in main_cpp
-    assert "fetchAndSendIr" in main_cpp
+    assert "fetchAndSendIrBoot" in main_cpp
     assert "'s'" in main_cpp or '"s"' in main_cpp
 
 
 def test_tls_fetch_single_session_per_play_attempt() -> None:
-    """Stage 5 sequencing: one TLS GET per ``fetchAndSendIr`` (no parallel client calls)."""
+    """One ``fetchSignalEnvelope`` site in main (shared ``playPipeline`` for boot/serial/HTTPS)."""
     main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
     assert main_cpp.count("fetchSignalEnvelope") == 1
+
+
+def test_stage6_https_play_server_contract_in_sources() -> None:
+    """Stage 6: BearSSL server, busy 409, auth 404/401 mapping surface."""
+    play_cpp = (_firmware_pete() / "src" / "pete_https_play.cpp").read_text(encoding="utf-8")
+    assert "BearSSL::WiFiServerSecure" in play_cpp
+    assert "/v1/play" in play_cpp
+    assert "409" in play_cpp and "Conflict" in play_cpp
+    assert "401" in play_cpp and "Unauthorized" in play_cpp
+    assert "404" in play_cpp and "unknown_label" in play_cpp
+    assert "503" in play_cpp and "Service Unavailable" in play_cpp
+
+
+def test_stage6_success_paths_log_https_then_tls_then_ir_phases() -> None:
+    """Maps to stage-06 §6 serial checklist and MANUAL_VALIDATION §6."""
+    play_cpp = (_firmware_pete() / "src" / "pete_https_play.cpp").read_text(encoding="utf-8")
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert "HTTPS in: POST /v1/play" in play_cpp
+    assert "phase: TLS out (Peter fetch)" in play_cpp
+    assert "phase: IR sendRaw" in main_cpp and "sendRaw complete" in main_cpp
 
 
 def test_prep_secrets_script_exists() -> None:
