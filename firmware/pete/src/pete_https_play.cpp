@@ -16,6 +16,7 @@ constexpr uint32_t kIoDeadlineMs = 20000;
 constexpr size_t kMaxRequestBytes = 1536;
 constexpr size_t kMaxBodyBytes = 384;
 constexpr size_t kMaxLabelLen = 64;
+constexpr size_t kMaxKindLen = 32;
 
 BearSSL::WiFiServerSecure* g_srv = nullptr;
 BearSSL::X509List* g_chain = nullptr;
@@ -257,6 +258,24 @@ void handleOneClient(BearSSL::WiFiClientSecure& client) {
   const char* label = doc["label"].as<const char*>();
   if (!label || label[0] == '\0' || strlen(label) > kMaxLabelLen) {
     sendHttpResponse(client, 400, "Bad Request", "{\"error\":\"invalid_label\"}");
+    return;
+  }
+
+  const char* kind = "ir";
+  if (!doc["kind"].isNull()) {
+    if (!doc["kind"].is<const char*>()) {
+      sendHttpResponse(client, 400, "Bad Request", "{\"error\":\"invalid_kind\"}");
+      return;
+    }
+    const char* k = doc["kind"].as<const char*>();
+    if (!k || k[0] == '\0' || strlen(k) > kMaxKindLen) {
+      sendHttpResponse(client, 400, "Bad Request", "{\"error\":\"invalid_kind\"}");
+      return;
+    }
+    kind = k;
+  }
+  if (!streqi(kind, "ir")) {
+    sendHttpResponse(client, 400, "Bad Request", "{\"error\":\"unknown_kind\"}");
     return;
   }
 

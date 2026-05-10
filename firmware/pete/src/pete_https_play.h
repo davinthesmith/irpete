@@ -8,8 +8,9 @@
 namespace pete {
 
 /**
- * HTTPS listener + POST /v1/play (REFERENCE.md §5 Stage 6).
- * Caller supplies TLS PEMs and a play pipeline (Peter fetch + IR send).
+ * HTTPS listener + POST /v1/play (REFERENCE.md §5).
+ * JSON body: required `label`; optional `kind` (default `"ir"`). Caller supplies TLS PEMs and a
+ * play pipeline (Peter TLS fetch + hardware driver dispatch).
  */
 using PlayPipelineFn = bool (*)(const char* label, peter::FetchResult* fetch_result_out);
 

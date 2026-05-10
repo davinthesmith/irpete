@@ -1,4 +1,4 @@
-"""Firmware Pete guardrails: PlatformIO project matches REFERENCE / stage plans (5–6)."""
+"""Firmware Pete guardrails: PlatformIO project matches REFERENCE / stage plans (5–7)."""
 
 from __future__ import annotations
 
@@ -76,10 +76,17 @@ def test_readme_covers_wiring_flash_serial_and_hil() -> None:
         "Bearer",
         "peter_tls_client",
         "pete_https_play",
+        "hardware_driver",
+        "ir_led_driver",
         "--cacert",
         "PETE_SIMULATE_BUSY_MS",
         "401",
         "409",
+        "HIL checklist",
+        "kind",
+        "unknown_kind",
+        "2N2222",
+        "pete.toomanyprojects.dev",
     ):
         assert needle in readme, f"README must mention {needle!r}"
 
@@ -107,12 +114,13 @@ def test_tls_client_maps_failure_http_codes_for_serial_debugging() -> None:
 
 
 def test_main_logs_wifi_failure_tls_http_success_exit_criteria() -> None:
-    """Wi‑Fi fail, Peter GET 200 + pulses + IR, HTTPS server init — Stage 5–6 §6."""
+    """Wi‑Fi fail, Peter GET 200 + pulses + IR, HTTPS server init — Stage 5–7 §6."""
     main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    ir_cpp = (_firmware_pete() / "src" / "ir_led_driver.cpp").read_text(encoding="utf-8")
     assert "Wi-Fi: connection timed out" in main_cpp
     assert "Halting: fix Wi-Fi credentials" in main_cpp
-    assert "HTTP 200: pulses=" in main_cpp
-    assert "sendRaw" in main_cpp or "sendRaw complete" in main_cpp
+    assert "HTTP 200: pulses=" in ir_cpp
+    assert "sendRaw" in ir_cpp and "sendRaw complete" in ir_cpp
     assert "httpsPlayInit" in main_cpp
     assert "httpsPlayPoll" in main_cpp
 
@@ -132,7 +140,7 @@ def test_tls_fetch_single_session_per_play_attempt() -> None:
 
 
 def test_stage6_https_play_server_contract_in_sources() -> None:
-    """Stage 6: BearSSL server, busy 409, auth 404/401 mapping surface."""
+    """Stage 6–7: BearSSL server, busy 409, auth, optional JSON kind, 404/401 mapping surface."""
     play_cpp = (_firmware_pete() / "src" / "pete_https_play.cpp").read_text(encoding="utf-8")
     assert "BearSSL::WiFiServerSecure" in play_cpp
     assert "/v1/play" in play_cpp
@@ -140,15 +148,27 @@ def test_stage6_https_play_server_contract_in_sources() -> None:
     assert "401" in play_cpp and "Unauthorized" in play_cpp
     assert "404" in play_cpp and "unknown_label" in play_cpp
     assert "503" in play_cpp and "Service Unavailable" in play_cpp
+    assert "unknown_kind" in play_cpp and "invalid_kind" in play_cpp
 
 
 def test_stage6_success_paths_log_https_then_tls_then_ir_phases() -> None:
     """Maps to stage-06 §6 serial checklist and MANUAL_VALIDATION §6."""
     play_cpp = (_firmware_pete() / "src" / "pete_https_play.cpp").read_text(encoding="utf-8")
-    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    ir_cpp = (_firmware_pete() / "src" / "ir_led_driver.cpp").read_text(encoding="utf-8")
     assert "HTTPS in: POST /v1/play" in play_cpp
     assert "phase: TLS out (Peter fetch)" in play_cpp
-    assert "phase: IR sendRaw" in main_cpp and "sendRaw complete" in main_cpp
+    assert "phase: IR sendRaw" in ir_cpp and "sendRaw complete" in ir_cpp
+
+
+def test_stage7_hardware_driver_registry_and_ir_driver_modules() -> None:
+    hdr = (_firmware_pete() / "src" / "hardware_driver.h").read_text(encoding="utf-8")
+    reg = (_firmware_pete() / "src" / "hardware_driver.cpp").read_text(encoding="utf-8")
+    ir_h = (_firmware_pete() / "src" / "ir_led_driver.h").read_text(encoding="utf-8")
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert "class HardwareDriver" in hdr and "SignalEnvelope" in hdr
+    assert "registerDriver" in reg and "getDriver" in reg
+    assert "IrLedDriver" in ir_h and 'return "ir"' in ir_h
+    assert "registerDriver" in main_cpp and 'getDriver("ir")' in main_cpp
 
 
 def test_prep_secrets_script_exists() -> None:
