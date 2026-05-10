@@ -62,3 +62,58 @@ def test_resolve_db_path_default_under_peter_data(
     p = resolve_db_path()
     assert p.name == "irpete.db"
     assert p.parent.name == "data"
+
+
+def test_load_settings_tls_requires_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IRPETE_API_KEY", "k")
+    monkeypatch.setenv("IRPETE_TLS_CERTFILE", "/tmp/a.pem")
+    monkeypatch.delenv("IRPETE_TLS_KEYFILE", raising=False)
+    with pytest.raises(RuntimeError, match="both"):
+        load_settings()
+
+
+def test_load_settings_tls_missing_cert_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    key = tmp_path / "k.pem"
+    key.write_text("x")
+    monkeypatch.setenv("IRPETE_API_KEY", "k")
+    monkeypatch.setenv("IRPETE_TLS_CERTFILE", str(tmp_path / "missing.pem"))
+    monkeypatch.setenv("IRPETE_TLS_KEYFILE", str(key))
+    with pytest.raises(RuntimeError, match="IRPETE_TLS_CERTFILE"):
+        load_settings()
+
+
+def test_load_settings_tls_missing_key_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cert = tmp_path / "c.pem"
+    cert.write_text("x")
+    monkeypatch.setenv("IRPETE_API_KEY", "k")
+    monkeypatch.setenv("IRPETE_TLS_CERTFILE", str(cert))
+    monkeypatch.setenv("IRPETE_TLS_KEYFILE", str(tmp_path / "missing.pem"))
+    with pytest.raises(RuntimeError, match="IRPETE_TLS_KEYFILE"):
+        load_settings()
+
+
+def test_load_settings_disable_openapi_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRPETE_API_KEY", "k")
+    monkeypatch.setenv("IRPETE_DISABLE_OPENAPI", "1")
+    assert load_settings().disable_openapi is True
+
+
+def test_load_settings_tls_paths_roundtrip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cert = tmp_path / "c.pem"
+    key = tmp_path / "k.pem"
+    cert.write_text("cert")
+    key.write_text("key")
+    monkeypatch.setenv("IRPETE_API_KEY", "k")
+    monkeypatch.setenv("IRPETE_TLS_CERTFILE", str(cert))
+    monkeypatch.setenv("IRPETE_TLS_KEYFILE", str(key))
+    s = load_settings()
+    assert s.tls_certfile == cert
+    assert s.tls_keyfile == key

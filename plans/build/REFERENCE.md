@@ -167,7 +167,7 @@ Training hardware is **TSOP-class** (demodulated). The envelope is **“learned 
 | `IRPETE_TLS_CERTFILE` | 3+ | yes (prod) | Server certificate **fullchain** PEM. |
 | `IRPETE_TLS_KEYFILE` | 3+ | yes (prod) | Server private key PEM. |
 | `IRPETE_HOST` | 3+ | optional | Bind address (default `0.0.0.0`). |
-| `IRPETE_PORT` | 1+ | optional | Listen port (default `8443` or `443`—pick one and document; **443 requires root/cap_net_bind** on Linux unless using authbind). |
+| `IRPETE_PORT` | 1+ | optional | Listen port. **Dev (HTTP):** default **8000**. **Prod (HTTPS):** recommended **8443** (avoids binding port 443 without capabilities). |
 
 Use **`.env.example`** in repo; never commit real `.env`.
 
@@ -237,5 +237,5 @@ Index with usage instructions: [README.md](README.md).
 
 | Date | Change |
 |------|--------|
-| 2026-05-10 | Stage 1 Peter: §6 `raw_us` first-element / normalization / numeric bounds aligned with implementation (`peter/`). |
+| 2026-05-10 | Stage 3 Peter: §9 `IRPETE_PORT` defaults clarified (8000 dev HTTP, 8443 recommended for LAN HTTPS); TLS env vars `IRPETE_TLS_CERTFILE` / `IRPETE_TLS_KEYFILE`; optional `IRPETE_DISABLE_OPENAPI`. |
 | 2026-05-10 | Initial `plans/build`: REFERENCE (incl. §14 stage index), README, verbose stage plans 1–8. |

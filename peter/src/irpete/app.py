@@ -59,7 +59,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = load_settings()
 
-    app = FastAPI(title="IRPete Peter", version="0.1.0")
+    docs_kw: dict[str, Any] = {}
+    if settings.disable_openapi:
+        docs_kw = {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+    app = FastAPI(title="IRPete Peter", version="0.1.0", **docs_kw)
     app.state.settings = settings
 
     @app.get("/v1/health", dependencies=[Depends(require_api_key)])
