@@ -76,7 +76,7 @@ Template: [`peter/deploy/systemd/irpete-peter.service`](peter/deploy/systemd/irp
 
 Skip until the PlatformIO project exists under **`firmware/pete/`** (or the path given in docs).
 
-- [ ] Board joins Wi‑Fi; serial logs show no TLS handshake failures to Peter.
+- [ ] Board joins Wi‑Fi; **`GET /v1/signals/{label}`** completes over HTTPS (serial shows HTTP 200 + pulse count per [`firmware/pete/README.md`](firmware/pete/README.md)); no TLS handshake failures to Peter.
 - [ ] Embedded **CA/trust anchor** matches your Peter certificate chain policy ([`peter/README.md`](peter/README.md) “CA PEM for Pete”).
 - [ ] **IR LED transmit** can be observed (IR receiver, logic analyzer, or camera against a known remote profile), consistent with [`REFERENCE.md`](plans/build/REFERENCE.md) §8 pin defaults when applicable.
 
