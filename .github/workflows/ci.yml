@@ -39,6 +39,7 @@ jobs:
           python-version: "3.11"
           working-directory: catalog
           enable-cache: true
+          activate-environment: true
 
       - name: Install package + dev deps
         run: uv pip install -e ".[dev]"
