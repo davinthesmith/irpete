@@ -1,10 +1,12 @@
-# IRPete — Peter (Stages 1–3)
+# IRPete — Peter (Stages 1–4)
 
 Peter exposes a versioned JSON **envelope** API backed by **SQLite (WAL)**. Authentication is a single shared **`IRPETE_API_KEY`** passed as `Authorization: Bearer <token>` on **every** `/v1` route, including **`GET /v1/health`**.
 
 Stage 2 adds the **`irpete-capture`** CLI on the Raspberry Pi: record TSOP pulse timings (RAM until `stop`), then **`validate`** / **`preview`** / **`commit`** using the **same** Pydantic rules and SQLite upsert as `POST /v1/signals`.
 
 Stage 3 adds **HTTPS on the LAN** via Uvicorn **`ssl_certfile` / `ssl_keyfile`** when **`IRPETE_TLS_CERTFILE`** and **`IRPETE_TLS_KEYFILE`** are set (paths to PEM files). Leave both unset for **local HTTP only** (`127.0.0.1`, default port **8000**).
+
+Stage 4 adds a **systemd** unit template so Peter starts **after the network is online**, **restarts on failure**, and logs to **journald** (no secrets in the unit file—use **`/etc/irpete/peter.env`**).
 
 Shared contract: [`plans/build/REFERENCE.md`](../plans/build/REFERENCE.md).
 
@@ -127,6 +129,110 @@ openssl x509 -in /etc/irpete/fullchain.pem -noout -issuer -subject
 
 Document which PEM you embedded so rotations stay predictable: Pete trusts the **CA**, so **leaf rotation** does not require a firmware change as long as the new leaf chains to the same anchor.
 
+## Stage 4 — systemd service (boot, restart, journald)
+
+Peter runs as a **system** service so it can bind **`IRPETE_PORT`** (recommended **8443**), read **`/etc/irpete/`** TLS material, and start without an interactive shell.
+
+### Unit template and environment file
+
+In the repo:
+
+- [`deploy/systemd/irpete-peter.service`](deploy/systemd/irpete-peter.service) — copy to **`/etc/systemd/system/`** and adjust **`WorkingDirectory`** + **`ExecStart`** (venv **`python`** that has `pip install -e .`).
+- [`deploy/peter.env.example`](deploy/peter.env.example) — keys to place in **`/etc/irpete/peter.env`** (no committed secrets).
+
+### Install on Raspberry Pi OS
+
+1. Install the app and venv under a stable path (example **`/opt/irpete/peter`**):
+
+   ```bash
+   sudo mkdir -p /opt/irpete
+   sudo rsync -a ./peter/ /opt/irpete/peter/
+   cd /opt/irpete/peter
+   sudo python3 -m venv .venv
+   sudo .venv/bin/pip install -e .
+   ```
+
+2. Create **`/etc/irpete/peter.env`** from **`deploy/peter.env.example`**, set **`IRPETE_API_KEY`**, TLS paths, **`IRPETE_HOST=0.0.0.0`**, **`IRPETE_PORT=8443`**, and optionally **`IRPETE_DB_PATH`** (absolute path is best for reboot stability).
+
+   ```bash
+   sudo install -d -m 0755 /etc/irpete
+   sudo install -m 0600 /path/to/your/peter.env /etc/irpete/peter.env
+   sudo chown root:root /etc/irpete/peter.env
+   ```
+
+   Ensure the **private key** PEM is **`chmod 600`** and readable by the user running the service (root by default in the template).
+
+3. Edit the copied unit so **`WorkingDirectory`** and **`ExecStart`** match step 1, then enable:
+
+   ```bash
+   sudo cp /opt/irpete/peter/deploy/systemd/irpete-peter.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now irpete-peter
+   ```
+
+4. Confirm **`active (running)`**:
+
+   ```bash
+   systemctl status irpete-peter --no-pager
+   ```
+
+### Logs
+
+Follow Uvicorn and Python logs:
+
+```bash
+journalctl -u irpete-peter -f
+```
+
+Recent boot:
+
+```bash
+journalctl -u irpete-peter -b --no-pager
+```
+
+Expect **`Application startup complete`** (Uvicorn) and no repeated TLS file errors.
+
+### `network-online.target` (DNS readiness)
+
+The unit is ordered **after** **`network-online.target`** so systemd waits for a configured “network is up” waiter. On **Wi‑Fi‑only** Pis, ensure your image enables **`systemd-networkd-wait-online.service`** or **`NetworkManager-wait-online.service`** as appropriate; otherwise DNS for **`peter.toomanyprojects.dev`** may not be ready immediately. **Ethernet** is simpler for headless reliability.
+
+### Cold reboot acceptance (operator)
+
+After **`systemctl enable --now irpete-peter`** works once:
+
+1. **`sudo reboot`** (or power cycle).
+2. Within **~1–3 minutes** (typical LAN + DHCP), from another host:
+
+   ```bash
+   curl -sS --resolve peter.toomanyprojects.dev:8443:192.168.x.x \
+     "https://peter.toomanyprojects.dev:8443/v1/health" \
+     -H "Authorization: Bearer <IRPETE_API_KEY>"
+   ```
+
+   Expect **`{"status":"ok"}`** (or your app’s health JSON) and **HTTP 200**.
+
+3. On the Pi, **`systemctl status irpete-peter`** shows **active (running)**.
+
+### Crash recovery
+
+To confirm **`Restart=always`**, after the service is healthy:
+
+```bash
+sudo kill -9 "$(pgrep -f 'irpete.main' | head -1)"
+```
+
+Within a few seconds, **`systemctl status irpete-peter`** should show a fresh PID and **`journalctl -u irpete-peter -n 20`** should show a new startup.
+
+### Troubleshooting (systemd)
+
+| Symptom | Likely cause |
+|--------|----------------|
+| Service starts but **`curl` fails hostname** | DNS not ready yet (`network-online` waiter missing on Wi‑Fi), or split-horizon DNS not pointing at the Pi |
+| **`status=203/EXEC`** or **`No such file`** in journal | Wrong **`ExecStart`** path (venv python moved or not installed) |
+| **SQLite / relative paths wrong** | **`WorkingDirectory`** does not match the tree where **`data/`** or **`IRPETE_DB_PATH`** was intended |
+| **TLS / permission denied** | Key or cert path wrong, or PEM not readable by the service user; check **`journalctl -u irpete-peter`** |
+| **401 from health** | Missing **`IRPETE_API_KEY`** in **`/etc/irpete/peter.env`** or wrong Bearer on the client |
+
 ## Stage 2 — manual IR capture CLI (`irpete-capture`)
 
 After `pip install -e ".[dev]"` (or `pip install -e .`), the console script **`irpete-capture`** is available.
@@ -177,7 +283,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-## Envelope semantics (Stages 1–3)
+## Envelope semantics (Stages 1–4)
 
 - **`POST /v1/signals`** **upserts by `label`** (same label replaces the stored envelope).
 - **`raw_us` mark-first normalization:** IRremoteESP8266 `sendRaw` expects the first entry to be a **mark**. On POST, if the first duration is **greater than 50 ms**, it is treated as a leading idle gap and **removed once** so the stored array starts with a mark-oriented timing sequence. Values must fit **uint16** on the wire (1–65535 µs per element). Length is capped at **512** elements for v1.

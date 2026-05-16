@@ -63,12 +63,12 @@ On the **Pi**, with TSOP wiring per [`REFERENCE.md`](plans/build/REFERENCE.md) �
 
 ## 5. Peter — systemd and cold boot (after Stage 4)
 
-When a **`systemd`** unit is documented:
+Template: [`peter/deploy/systemd/irpete-peter.service`](peter/deploy/systemd/irpete-peter.service). Install per [`peter/README.md`](peter/README.md) Stage 4.
 
-- [ ] **`systemctl status`** shows Peter **active** after boot.
-- [ ] **`journalctl -u <unit>`** shows startup without interactive prompts; logs go to the journal as intended.
-
-- [ ] **Reboot test:** Pi cold boot → wait for **`network-online`** → HTTPS **`/v1/health`** succeeds from the laptop without manual SSH intervention.
+- [ ] **`systemctl enable --now irpete-peter`** (after **`daemon-reload`**); **`systemctl status irpete-peter`** is **active (running)** after boot—not only when started manually over SSH.
+- [ ] **`journalctl -u irpete-peter`** shows clean Uvicorn startup (no **`203/EXEC`**, unreadable TLS files, or missing env).
+- [ ] **Cold boot:** reboot or power cycle → after **`network-online`**, **`/v1/health`** from the laptop succeeds as in §2 without starting the service by hand.
+- [ ] **`Restart=always`:** **`sudo kill -9 "$(pgrep -f 'irpete.main' | head -1)"`** → within a few seconds the service is **active** again with a new PID.
 
 ---
 
