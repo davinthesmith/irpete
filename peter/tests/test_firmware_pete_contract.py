@@ -1,0 +1,162 @@
+"""Stage 5 guardrails: ``firmware/pete`` PlatformIO project matches REFERENCE / stage plan."""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _firmware_pete() -> Path:
+    return _repo_root() / "firmware" / "pete"
+
+
+def test_platformio_ini_espressif8266_d1_mini_and_libs() -> None:
+    ini = (_firmware_pete() / "platformio.ini").read_text(encoding="utf-8")
+    assert "espressif8266" in ini
+    assert "d1_mini" in ini
+    assert "ArduinoJson" in ini
+    assert "IRremoteESP8266" in ini
+    assert "prep_secrets.py" in ini
+
+
+def test_secrets_example_has_wifi_peter_and_ca_pem() -> None:
+    ex = (_firmware_pete() / "include" / "secrets.h.example").read_text(encoding="utf-8")
+    for needle in (
+        "WIFI_SSID",
+        "WIFI_PASSWORD",
+        "IRPETE_API_KEY",
+        "PETER_HOST",
+        "PETER_PORT",
+        "PETER_LABEL",
+        "BEGIN CERTIFICATE",
+        "PETER_CA_PEM",
+    ):
+        assert needle in ex
+
+
+def test_gitignore_excludes_secrets_and_venv() -> None:
+    gi = (_firmware_pete() / ".gitignore").read_text(encoding="utf-8")
+    assert "secrets.h" in gi
+    assert ".venv" in gi
+    assert ".pio" in gi
+
+
+def test_max_raw_elements_matches_peter_validate() -> None:
+    validate_py = _repo_root() / "peter" / "src" / "irpete" / "validate.py"
+    text = validate_py.read_text(encoding="utf-8")
+    m_py = re.search(r"MAX_RAW_ELEMENTS\s*=\s*(\d+)", text)
+    assert m_py is not None
+    hdr = (_firmware_pete() / "src" / "peter_tls_client.h").read_text(encoding="utf-8")
+    m_h = re.search(r"kMaxRawElements\s*=\s*(\d+)", hdr)
+    assert m_h is not None
+    assert m_py.group(1) == m_h.group(1) == "512"
+
+
+def test_readme_covers_wiring_flash_serial_and_hil() -> None:
+    readme = (_firmware_pete() / "README.md").read_text(encoding="utf-8")
+    for needle in (
+        "D2",
+        "GPIO4",
+        "pio run",
+        "115200",
+        "GET /v1/signals",
+        "Bearer",
+        "peter_tls_client",
+    ):
+        assert needle in readme, f"README must mention {needle!r}"
+
+
+def test_main_uses_gpio4_for_ir_send() -> None:
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert "kIrLedGpio" in main_cpp and "4" in main_cpp
+
+
+def test_tls_client_uses_bearssl_https_get_path() -> None:
+    cpp = (_firmware_pete() / "src" / "peter_tls_client.cpp").read_text(encoding="utf-8")
+    assert "BearSSL::WiFiClientSecure" in cpp
+    assert "BearSSL::X509List" in cpp
+    assert "/v1/signals/" in cpp
+    assert "Authorization" in cpp
+
+
+def test_tls_client_maps_failure_http_codes_for_serial_debugging() -> None:
+    """Stage 5 §6: failure modes include 401 / 404 / 5xx distinct from TLS/JSON."""
+    cpp = (_firmware_pete() / "src" / "peter_tls_client.cpp").read_text(encoding="utf-8")
+    assert "401" in cpp and "FetchResult::Unauthorized" in cpp
+    assert "404" in cpp and "FetchResult::NotFound" in cpp
+    assert "500" in cpp and "FetchResult::ServerError" in cpp
+    assert "JsonError" in cpp and "InvalidEnvelope" in cpp
+
+
+def test_main_logs_wifi_failure_tls_http_success_exit_criteria() -> None:
+    """Maps to ``stage-05-pete-tls-client-ir.md`` §6: Wi-Fi fail, GET 200 + pulses, logged outcomes."""
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert "Wi-Fi: connection timed out" in main_cpp
+    assert "Halting: fix Wi-Fi credentials" in main_cpp
+    assert "HTTP 200: pulses=" in main_cpp
+    assert "sendRaw" in main_cpp or "sendRaw complete" in main_cpp
+
+
+def test_main_documents_boot_and_serial_trigger_modes() -> None:
+    """Stage 5: trigger choice (boot + Serial) documented and implemented."""
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert "PETE_TRIGGER_ON_BOOT" in main_cpp
+    assert "fetchAndSendIr" in main_cpp
+    assert "'s'" in main_cpp or '"s"' in main_cpp
+
+
+def test_tls_fetch_single_session_per_play_attempt() -> None:
+    """Stage 5 sequencing: one TLS GET per ``fetchAndSendIr`` (no parallel client calls)."""
+    main_cpp = (_firmware_pete() / "src" / "main.cpp").read_text(encoding="utf-8")
+    assert main_cpp.count("fetchSignalEnvelope") == 1
+
+
+def test_prep_secrets_script_exists() -> None:
+    script = _firmware_pete() / "extra_scripts" / "prep_secrets.py"
+    text = script.read_text(encoding="utf-8")
+    assert "secrets.h.example" in text and "secrets.h" in text
+
+
+def _platformio_run_argv(fw: Path) -> list[str] | None:
+    if shutil.which("pio"):
+        return ["pio", "run"]
+    vpy = fw / ".venv" / "bin" / "python"
+    if vpy.is_file():
+        return [str(vpy), "-m", "platformio", "run"]
+    return None
+
+
+def test_pio_run_succeeds_when_platformio_available() -> None:
+    """Compile-check for Stage 5 §6 / REFERENCE §11 ``pio run`` expectation."""
+    fw = _firmware_pete()
+    argv = _platformio_run_argv(fw)
+    if argv is None:
+        pytest.skip("Install PlatformIO globally or create firmware/pete/.venv with platformio")
+
+    secrets = fw / "include" / "secrets.h"
+    example = fw / "include" / "secrets.h.example"
+    created = False
+    if not secrets.is_file() and example.is_file():
+        secrets.write_bytes(example.read_bytes())
+        created = True
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=fw,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+    finally:
+        if created:
+            secrets.unlink(missing_ok=True)
