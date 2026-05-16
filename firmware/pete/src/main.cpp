@@ -1,6 +1,6 @@
 /**
- * Pete Stage 6: Wi-Fi + TLS client to Peter + TLS server on Pete with POST /v1/play,
- * plus IR sendRaw on D2 (GPIO4).
+ * Pete Stage 7: Wi-Fi + TLS client to Peter + TLS server on Pete with POST /v1/play,
+ * IR output via driver registry (`IrLedDriver` on D2 / GPIO4).
  *
  * Boot: optional one-shot fetch (PETE_TRIGGER_ON_BOOT). Loop: HTTPS /v1/play + Serial ``s``.
  */
@@ -8,10 +8,14 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <IRsend.h>
+#include <memory>
 
+#include "hardware_driver.h"
+#include "ir_led_driver.h"
 #include "pete_https_play.h"
 #include "peter_tls_client.h"
 #include "secrets.h"
+#include "stub_hardware_driver.h"
 
 #ifndef PETE_TRIGGER_ON_BOOT
 #define PETE_TRIGGER_ON_BOOT 1
@@ -58,7 +62,7 @@ void logFetchResult(peter::FetchResult r) {
   Serial.println(peter::fetchResultMessage(r));
 }
 
-/** Fetch envelope from Peter over TLS, then IR sendRaw (REFERENCE §5 sequencing). */
+/** Fetch envelope from Peter over TLS, then hardware driver play (REFERENCE §5 sequencing). */
 bool playPipeline(const char* label, peter::FetchResult* fr_out) {
   peter::FetchConfig cfg = {
       PETER_HOST,
@@ -74,23 +78,16 @@ bool playPipeline(const char* label, peter::FetchResult* fr_out) {
     return false;
   }
 
-  Serial.print(F("HTTP 200: pulses="));
-  Serial.println(static_cast<unsigned>(env.raw_len));
-
-  uint8_t khz = static_cast<uint8_t>(env.carrier_hz / 1000);
-  if (khz < 30 || khz > 60) {
-    Serial.println(F("IR: carrier kHz out of range; clamping"));
-    if (khz < 30) {
-      khz = 30;
-    }
-    if (khz > 60) {
-      khz = 60;
-    }
+  pete::HardwareDriver* driver = pete::getDriver("ir");
+  if (!driver) {
+    Serial.println(F("play: no ir driver"));
+    *fr_out = peter::FetchResult::InvalidEnvelope;
+    return false;
   }
-
-  Serial.println(F("phase: IR sendRaw"));
-  irsend.sendRaw(env.raw_us, static_cast<uint16_t>(env.raw_len), khz);
-  Serial.println(F("IR: sendRaw complete"));
+  if (!driver->play(env)) {
+    *fr_out = peter::FetchResult::InvalidEnvelope;
+    return false;
+  }
   return true;
 }
 
@@ -106,8 +103,17 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println(F("Pete Stage 6 — HTTPS /v1/play + TLS client + IR sendRaw"));
+  Serial.println(F("Pete Stage 7 — HTTPS /v1/play + TLS client + IR driver registry"));
   irsend.begin();
+
+  if (!pete::registerDriver(std::make_unique<pete::IrLedDriver>(&irsend))) {
+    Serial.println(F("Halting: IR driver register failed"));
+    return;
+  }
+  if (!pete::registerDriver(std::make_unique<pete::StubHardwareDriver>())) {
+    Serial.println(F("Halting: stub driver register failed"));
+    return;
+  }
 
   if (!wifiConnect()) {
     Serial.println(F("Halting: fix Wi-Fi credentials in include/secrets.h"));

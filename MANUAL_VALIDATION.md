@@ -72,7 +72,7 @@ Template: [`peter/deploy/systemd/irpete-peter.service`](peter/deploy/systemd/irp
 
 ---
 
-## 6. Pete — firmware on hardware (after Stages 5–6)
+## 6. Pete — firmware on hardware (after Stages 5–7)
 
 Skip until the PlatformIO project exists under **`firmware/pete/`** (or the path given in docs).
 
@@ -82,6 +82,8 @@ Skip until the PlatformIO project exists under **`firmware/pete/`** (or the path
 
 - [ ] **`POST /v1/play`** on Pete ([`firmware/pete/README.md`](firmware/pete/README.md)): **`curl`** with TLS trust for Pete (**`--cacert`** / **`--resolve`**), Bearer, **`{"label":"<stored-label>"}`** → **200** + IR; wrong Bearer → **401**; **`PETE_SIMULATE_BUSY_MS`** set non‑zero + overlapping **`curl`** during that window → second request **409**.
 - [ ] On successful play, serial shows HTTPS handling → Peter TLS fetch → IR (phases in firmware README).
+- [ ] **`POST /v1/play`** **`kind`** field (Stage 7): omit **`kind`** or **`"kind":"ir"`** matches legacy **`{"label":"…"}`**; **`"kind":"bogus"`** → **400** with **`unknown_kind`** (same TLS **`curl`** setup as above).
+- [ ] **Power cycle Pete** only (leave Peter running): first **`POST /v1/play`** after Pete reboot returns **200** without restarting Peter.
 
 ---
 
