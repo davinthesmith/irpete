@@ -1,0 +1,2 @@
+# CI: pinned PlatformIO for reproducible builds and pip cache keys.
+platformio==6.1.19
