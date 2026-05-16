@@ -1,0 +1,32 @@
+# Template: copy to /etc/systemd/system/irpete-catalog.service
+# Adjust WorkingDirectory and ExecStart to match your Pi install (venv python).
+#
+#   sudo cp deploy/systemd/irpete-catalog.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now irpete-catalog
+#
+# Secrets and TLS paths live in /etc/irpete/catalog.env (chmod 600). See deploy/catalog.env.example.
+
+[Unit]
+Description=IRPete Catalog — HTTPS API (Uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Match WorkingDirectory to the directory that contains `data/` (SQLite default) and your venv.
+WorkingDirectory=/opt/irpete/catalog
+EnvironmentFile=/etc/irpete/catalog.env
+
+# Replace with the interpreter from the venv where `pip install -e .` was run.
+ExecStart=/opt/irpete/catalog/.venv/bin/python -m irpete.main
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-# Stage 8: Peter pytest (headless) + Pete firmware compile — see plans/build/stage-08-ci-release-hygiene.md
+# Catalog pytest (headless) + Emitter firmware compile — see plans/build/README.md
 name: CI
 
 on:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: peter
+        working-directory: catalog
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: peter/pyproject.toml
+          cache-dependency-path: catalog/pyproject.toml
 
       - name: Install package + dev deps
         run: |
@@ -38,14 +38,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: firmware/pete
+        working-directory: firmware/emitter
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: platformio-${{ runner.os }}-${{ hashFiles('firmware/pete/platformio.ini') }}
+          key: platformio-${{ runner.os }}-${{ hashFiles('firmware/emitter/platformio.ini') }}
           restore-keys: |
             platformio-${{ runner.os }}-
 
