@@ -1,0 +1,62 @@
+# Stage 8: Peter pytest (headless) + Pete firmware compile — see plans/build/stage-08-ci-release-hygiene.md
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Tests use fixtures/monkeypatch; this avoids accidental bare ``load_settings()`` failures if env is empty.
+env:
+  IRPETE_API_KEY: ci-ephemeral-placeholder-not-for-production
+
+jobs:
+  python:
+    name: Python (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: peter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: peter/pyproject.toml
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Pytest
+        run: pytest -q
+
+  firmware:
+    name: Firmware (PlatformIO)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware/pete
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('firmware/pete/platformio.ini') }}
+          restore-keys: |
+            platformio-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+
+      - name: pio run (d1_mini)
+        run: pio run -e d1_mini

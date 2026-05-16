@@ -100,10 +100,11 @@ cd peter && pytest
 When firmware is present:
 
 ```bash
-cd firmware/pete && pio run
+cd firmware/pete && pio run -e d1_mini
 ```
 
 - [ ] **Firmware builds cleanly.**
+- [ ] **GitHub Actions:** push (or open a PR) and confirm the **CI** workflow is **green** for **Python (pytest)** and **Firmware (PlatformIO)** — local runs above do not prove the hosted runner will pass.
 
 ---
 
