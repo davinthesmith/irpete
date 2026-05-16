@@ -21,6 +21,9 @@ tests/test_api.py
 tests/test_capture_cli.py
 tests/test_capture_state.py
 tests/test_config.py
+tests/test_firmware_pete_contract.py
 tests/test_https.py
+tests/test_readme_operator_contract.py
 tests/test_repository.py
+tests/test_systemd_deploy_contract.py
 tests/test_validate.py

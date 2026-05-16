@@ -80,9 +80,8 @@ Skip until the PlatformIO project exists under **`firmware/pete/`** (or the path
 - [ ] Embedded **CA/trust anchor** matches your Peter certificate chain policy ([`peter/README.md`](peter/README.md) “CA PEM for Pete”).
 - [ ] **IR LED transmit** can be observed (IR receiver, logic analyzer, or camera against a known remote profile), consistent with [`REFERENCE.md`](plans/build/REFERENCE.md) §8 pin defaults when applicable.
 
-When **`POST /v1/play`** exists on Pete:
-
-- [ ] **`curl`** (or documented client) triggers playback; **409** when busy if implemented.
+- [ ] **`POST /v1/play`** on Pete ([`firmware/pete/README.md`](firmware/pete/README.md)): **`curl`** with TLS trust for Pete (**`--cacert`** / **`--resolve`**), Bearer, **`{"label":"<stored-label>"}`** → **200** + IR; wrong Bearer → **401**; **`PETE_SIMULATE_BUSY_MS`** set non‑zero + overlapping **`curl`** during that window → second request **409**.
+- [ ] On successful play, serial shows HTTPS handling → Peter TLS fetch → IR (phases in firmware README).
 
 ---
 

@@ -1,13 +1,15 @@
 /**
- * Pete Stage 5: Wi-Fi + HTTPS GET envelope from Peter + IR sendRaw on D2 (GPIO4).
+ * Pete Stage 6: Wi-Fi + TLS client to Peter + TLS server on Pete with POST /v1/play,
+ * plus IR sendRaw on D2 (GPIO4).
  *
- * Trigger: optional boot fetch (``PETE_TRIGGER_ON_BOOT``) + Serial ``s`` / newline to repeat.
+ * Boot: optional one-shot fetch (PETE_TRIGGER_ON_BOOT). Loop: HTTPS /v1/play + Serial ``s``.
  */
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <IRsend.h>
 
+#include "pete_https_play.h"
 #include "peter_tls_client.h"
 #include "secrets.h"
 
@@ -17,6 +19,14 @@
 
 #ifndef WIFI_CONNECT_TIMEOUT_MS
 #define WIFI_CONNECT_TIMEOUT_MS 60000U
+#endif
+
+#ifndef PETE_HTTPS_PORT
+#define PETE_HTTPS_PORT 8443
+#endif
+
+#ifndef PETE_SIMULATE_BUSY_MS
+#define PETE_SIMULATE_BUSY_MS 0
 #endif
 
 // IRremoteESP8266: GPIO number (D2 on Wemos D1 mini == GPIO4).
@@ -48,18 +58,19 @@ void logFetchResult(peter::FetchResult r) {
   Serial.println(peter::fetchResultMessage(r));
 }
 
-bool fetchAndSendIr() {
+/** Fetch envelope from Peter over TLS, then IR sendRaw (REFERENCE §5 sequencing). */
+bool playPipeline(const char* label, peter::FetchResult* fr_out) {
   peter::FetchConfig cfg = {
       PETER_HOST,
       static_cast<uint16_t>(PETER_PORT),
-      PETER_LABEL,
+      label,
       IRPETE_API_KEY,
       PETER_CA_PEM,
   };
   peter::SignalEnvelope env{};
-  peter::FetchResult r = peter::fetchSignalEnvelope(cfg, &env);
-  logFetchResult(r);
-  if (r != peter::FetchResult::Ok) {
+  *fr_out = peter::fetchSignalEnvelope(cfg, &env);
+  logFetchResult(*fr_out);
+  if (*fr_out != peter::FetchResult::Ok) {
     return false;
   }
 
@@ -77,9 +88,16 @@ bool fetchAndSendIr() {
     }
   }
 
+  Serial.println(F("phase: IR sendRaw"));
   irsend.sendRaw(env.raw_us, static_cast<uint16_t>(env.raw_len), khz);
   Serial.println(F("IR: sendRaw complete"));
   return true;
+}
+
+bool fetchAndSendIrBoot() {
+  Serial.println(F("phase: boot trigger (Peter TLS + IR)"));
+  peter::FetchResult fr{};
+  return playPipeline(PETER_LABEL, &fr);
 }
 
 }  // namespace
@@ -88,7 +106,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println(F("Pete Stage 5 — TLS client + IR sendRaw"));
+  Serial.println(F("Pete Stage 6 — HTTPS /v1/play + TLS client + IR sendRaw"));
   irsend.begin();
 
   if (!wifiConnect()) {
@@ -96,14 +114,32 @@ void setup() {
     return;
   }
 
+  pete::HttpsPlayConfig srv = {
+      static_cast<uint16_t>(PETE_HTTPS_PORT),
+      PETE_SERVER_CERT_PEM,
+      PETE_SERVER_PRIVATE_KEY_PEM,
+      IRPETE_API_KEY,
+      PETE_SIMULATE_BUSY_MS,
+      playPipeline,
+  };
+  if (!pete::httpsPlayInit(srv)) {
+    Serial.println(F("Halting: HTTPS server init failed (cert/key PEM?)"));
+    return;
+  }
+
 #if PETE_TRIGGER_ON_BOOT
-  (void)fetchAndSendIr();
+  (void)fetchAndSendIrBoot();
 #endif
 
-  Serial.println(F("Serial: press 's' or Enter to fetch + transmit again."));
+  Serial.print(F("Ready: POST https://<pete-ip>:"));
+  Serial.print(static_cast<int>(PETE_HTTPS_PORT));
+  Serial.println(F("/v1/play"));
+  Serial.println(F("Serial: press 's' or Enter to replay PETER_LABEL via Peter + IR."));
 }
 
 void loop() {
+  pete::httpsPlayPoll();
+
   if (Serial.available() <= 0) {
     return;
   }
@@ -112,6 +148,8 @@ void loop() {
     while (Serial.available() > 0) {
       (void)Serial.read();
     }
-    (void)fetchAndSendIr();
+    Serial.println(F("phase: serial trigger (Peter TLS + IR)"));
+    peter::FetchResult fr{};
+    (void)playPipeline(PETER_LABEL, &fr);
   }
 }

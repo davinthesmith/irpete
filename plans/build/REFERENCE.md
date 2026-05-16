@@ -237,6 +237,7 @@ Index with usage instructions: [README.md](README.md).
 
 | Date | Change |
 |------|--------|
+| 2026-05-10 | Stage 6 Pete: §5 `POST /v1/play` — Peter **404** for unknown label is surfaced as **404** from Pete; Peter TLS/connect/5xx failures → **503**; malformed upstream envelope / Peter **401** to Pete’s fetch → **502** (documented in `firmware/pete/README.md`). |
 | 2026-05-10 | Stage 4 Peter: §2 `peter/deploy/systemd/irpete-peter.service` + `peter/deploy/peter.env.example`; production env on Pi as `/etc/irpete/peter.env` (0600). |
 | 2026-05-10 | Stage 3 Peter: §9 `IRPETE_PORT` defaults clarified (8000 dev HTTP, 8443 recommended for LAN HTTPS); TLS env vars `IRPETE_TLS_CERTFILE` / `IRPETE_TLS_KEYFILE`; optional `IRPETE_DISABLE_OPENAPI`. |
 | 2026-05-10 | Initial `plans/build`: REFERENCE (incl. §14 stage index), README, verbose stage plans 1–8. |
