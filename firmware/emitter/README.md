@@ -2,12 +2,12 @@
 
 This firmware joins Wi‑Fi, exposes **HTTPS** on Emitter (**`POST /v1/play`** per [`plans/build/REFERENCE.md`](../../plans/build/REFERENCE.md) §5), **HTTPS GET** an envelope from Catalog (`GET /v1/signals/{label}`), validate TLS with an embedded CA PEM (BearSSL trust anchors), parse JSON per REFERENCE §6, then dispatch the fetched envelope through a **hardware driver registry** (v1: **`IrLedDriver`** with `id` **`ir`**) to **IRremoteESP8266** `sendRaw` on **D2 (GPIO4)**. A **`StubHardwareDriver`** (`id` **`stub`**) is registered for future kinds; **`POST /v1/play`** only selects **`ir`**.
 
-**Doc-only DNS:** you can point **`emitter.toomanyprojects.dev`** at Emitter’s LAN IP (hosts or LAN DNS) so curl examples stay stable; the board still uses DHCP unless you pin it ([REFERENCE.md](REFERENCE.md) §3).
+**Doc-only DNS:** you can point **`IRPETE_EMITTER_FQDN`** (from [`catalog/.env.example`](../../catalog/.env.example)) at Emitter’s LAN IP (hosts or LAN DNS) so curl examples stay stable; the board still uses DHCP unless you pin it ([REFERENCE.md](../../plans/build/REFERENCE.md) §3).
 
 ## Prerequisites
 
 - PlatformIO ([install](https://docs.platformio.org/en/latest/core/installation.html)); this repo often uses a local venv: `python3 -m venv .venv && . .venv/bin/activate && pip install platformio`.
-- Catalog reachable at `https://catalog.toomanyprojects.dev:<port>` from the same LAN (split‑horizon DNS or hosts entry as needed).
+- Catalog reachable at `https://<IRPETE_CATALOG_FQDN>:<port>` from the same LAN (copy **`IRPETE_CATALOG_FQDN`** / **`IRPETE_PORT`** into `CATALOG_HOST` / `CATALOG_PORT` in `secrets.h`).
 - `IRPETE_API_KEY` matching Catalog’s environment (`Authorization: Bearer` — same secret for Catalog API and Emitter’s **`POST /v1/play`**).
 - TLS material for **Emitter’s HTTPS server** (leaf or wildcard PEM + private key in `secrets.h`; see template).
 - A signal row already stored for any label you play (e.g. via `POST /v1/signals` or the capture CLI).
@@ -15,7 +15,7 @@ This firmware joins Wi‑Fi, exposes **HTTPS** on Emitter (**`POST /v1/play`** p
 ## Secrets and TLS
 
 1. Copy `include/secrets.h.example` to `include/secrets.h` (or let the first `pio run` copy it via `extra_scripts/prep_secrets.py`).
-2. Set `WIFI_SSID`, `WIFI_PASSWORD`, `IRPETE_API_KEY`, `CATALOG_HOST`, `CATALOG_PORT`, and **`EMITTER_SERVER_CERT_PEM` / `EMITTER_SERVER_PRIVATE_KEY_PEM`** (replace the bundled **development** self-signed pair before production).
+2. Set `WIFI_SSID`, `WIFI_PASSWORD`, `IRPETE_API_KEY`, `CATALOG_HOST` (**`IRPETE_CATALOG_FQDN`**), `CATALOG_PORT` (**`IRPETE_PORT`**), and **`EMITTER_SERVER_CERT_PEM` / `EMITTER_SERVER_PRIVATE_KEY_PEM`** (leaf CN should match **`IRPETE_EMITTER_FQDN`**; replace the bundled **development** self-signed pair before production).
 3. **`CATALOG_CA_PEM`:** Trust anchor for Catalog’s HTTPS certificate (often Let’s Encrypt issuer / root — see REFERENCE §3).
 4. **`EMITTER_HTTPS_PORT`:** HTTPS listen port for Emitter (default **8443**, aligned with REFERENCE §9).
 5. **`EMITTER_SIMULATE_BUSY_MS`:** Optional milliseconds **before** contacting Catalog: during this window the firmware polls for **queued** HTTPS clients and answers them with **409 Conflict** so you can demonstrate overlapping `curl` requests on the bench. Use **0** in normal operation.
@@ -93,12 +93,13 @@ On success you should see: **`HTTPS in: POST /v1/play`** → **`phase: TLS out (
 Replace IP, port, key, and label. Use **`--cacert`** with the PEM that validates Emitter’s **server** certificate (the same chain or leaf you configured for curl trust — for the bundled self-signed example cert, use that cert file as **`--cacert`**).
 
 ```bash
+set -a && source ../../catalog/.env && set +a
 curl -v --cacert emitter-server-cert.pem \
-  --resolve emitter.toomanyprojects.dev:8443:192.168.1.50 \
-  -H "Authorization: Bearer $IRPETE_API_KEY" \
+  --resolve "${IRPETE_EMITTER_FQDN}:${EMITTER_HTTPS_PORT:-8443}:${IRPETE_LAN_IP}" \
+  -H "Authorization: Bearer ${IRPETE_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"label":"tv_power","kind":"ir"}' \
-  https://emitter.toomanyprojects.dev:8443/v1/play
+  "https://${IRPETE_EMITTER_FQDN}:${EMITTER_HTTPS_PORT:-8443}/v1/play"
 ```
 
 Omitting **`kind`** is equivalent to **`"ir"`**.

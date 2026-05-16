@@ -13,6 +13,8 @@ def test_readme_documents_https_env_and_troubleshooting() -> None:
         "IRPETE_TLS_CERTFILE",
         "IRPETE_TLS_KEYFILE",
         "IRPETE_DISABLE_OPENAPI",
+        "IRPETE_CATALOG_FQDN",
+        "IRPETE_LAN_IP",
         "8443",
         "SAN",
         "NTP",

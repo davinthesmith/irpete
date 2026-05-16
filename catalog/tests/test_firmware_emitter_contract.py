@@ -86,7 +86,7 @@ def test_readme_covers_wiring_flash_serial_and_hil() -> None:
         "kind",
         "unknown_kind",
         "2N2222",
-        "emitter.toomanyprojects.dev",
+        "IRPETE_EMITTER_FQDN",
     ):
         assert needle in readme, f"README must mention {needle!r}"
 

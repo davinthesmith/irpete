@@ -48,14 +48,16 @@ uvicorn irpete.app:create_app --factory --host 127.0.0.1 --port 8000
 
 The API listens on **`IRPETE_HOST` / `IRPETE_PORT`** (defaults **`127.0.0.1:8000`**). SQLite defaults to **`data/irpete.db`** under `catalog/` when **`IRPETE_DB_PATH`** is unset.
 
-## HTTPS on the LAN (`catalog.toomanyprojects.dev`)
+## HTTPS on the LAN (public DNS)
 
 Production-style TLS is a **deployment** concern: the FastAPI app is unchanged; Uvicorn loads **`IRPETE_TLS_CERTFILE`** (fullchain PEM) and **`IRPETE_TLS_KEYFILE`** (private key PEM). Recommended listen port is **8443** so the process does not need **`CAP_NET_BIND_SERVICE`** for port **443**.
 
+Operator curl/openssl examples use **`IRPETE_CATALOG_FQDN`**, **`IRPETE_EMITTER_FQDN`**, and optional **`IRPETE_LAN_IP`** from [`.env.example`](.env.example) (not read by the Python server).
+
 ### Prerequisites
 
-- **DNS:** An **A** (and optionally **AAAA**) record for **`catalog.toomanyprojects.dev`** pointing at the Raspberry Pi’s **LAN** address (split-horizon DNS is fine).
-- **Certificates:** A wildcard **`*.toomanyprojects.dev`** or a dedicated leaf whose **SAN** includes **`catalog.toomanyprojects.dev`**. Install **fullchain** + **private key** on the Pi (example paths: `/etc/irpete/fullchain.pem`, `/etc/irpete/privkey.pem`).
+- **DNS:** An **A** (and optionally **AAAA**) record for your Catalog FQDN (**`IRPETE_CATALOG_FQDN`**) pointing at the Raspberry Pi’s **LAN** address (split-horizon DNS is fine).
+- **Certificates:** A wildcard or dedicated leaf whose **SAN** includes **`IRPETE_CATALOG_FQDN`**. Install **fullchain** + **private key** on the Pi (example paths: `/etc/irpete/fullchain.pem`, `/etc/irpete/privkey.pem`).
 - **Permissions:** `chmod 600` on the private key; restrict directory listing as usual.
 - **Clock:** TLS validation fails if the Pi’s clock is wrong—use **NTP** (`timedatectl`).
 
@@ -91,12 +93,18 @@ python -m irpete.main
 
 ### Verify from another machine (full TLS verification, no `-k`)
 
-Replace `<token>` with **`IRPETE_API_KEY`** (and **`8443`** if that is your listen port):
+From `catalog/` (or with the same vars in **`/etc/irpete/catalog.env`** on the Pi), load operator hostnames and secrets:
 
 ```bash
-curl -v --resolve catalog.toomanyprojects.dev:8443:192.168.x.x \
-  "https://catalog.toomanyprojects.dev:8443/v1/health" \
-  -H "Authorization: Bearer <token>"
+set -a && source .env && set +a
+```
+
+Replace **`IRPETE_API_KEY`** in `.env` if you have not already. When split-horizon DNS is not set up on the client, set **`IRPETE_LAN_IP`** to the Pi’s LAN address.
+
+```bash
+curl -v --resolve "${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}:${IRPETE_LAN_IP}" \
+  "https://${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}/v1/health" \
+  -H "Authorization: Bearer ${IRPETE_API_KEY}"
 ```
 
 If DNS already resolves to the Pi on your LAN, omit **`--resolve`**. Expect **`HTTP/1.1 200`** (or HTTP/2) and JSON **`{"status":"ok"}`**.
@@ -105,7 +113,7 @@ Wrong or missing Bearer:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" \
-  "https://catalog.toomanyprojects.dev:8443/v1/health"
+  "https://${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}/v1/health"
 # expect 401
 ```
 
@@ -119,7 +127,8 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 Inspect the certificate chain:
 
 ```bash
-openssl s_client -connect catalog.toomanyprojects.dev:8443 -servername catalog.toomanyprojects.dev </dev/null
+openssl s_client -connect "${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}" \
+  -servername "${IRPETE_CATALOG_FQDN}" </dev/null
 ```
 
 ### CA PEM for Emitter firmware
@@ -208,7 +217,7 @@ Expect **`Application startup complete`** (Uvicorn) and no repeated TLS file err
 
 ### `network-online.target` (DNS readiness)
 
-The unit is ordered **after** **`network-online.target`** so systemd waits for a configured “network is up” waiter. On **Wi‑Fi‑only** Pis, ensure your image enables **`systemd-networkd-wait-online.service`** or **`NetworkManager-wait-online.service`** as appropriate; otherwise DNS for **`catalog.toomanyprojects.dev`** may not be ready immediately. **Ethernet** is simpler for headless reliability.
+The unit is ordered **after** **`network-online.target`** so systemd waits for a configured “network is up” waiter. On **Wi‑Fi‑only** Pis, ensure your image enables **`systemd-networkd-wait-online.service`** or **`NetworkManager-wait-online.service`** as appropriate; otherwise DNS for **`IRPETE_CATALOG_FQDN`** may not be ready immediately. **Ethernet** is simpler for headless reliability.
 
 ### Cold reboot acceptance (operator)
 
@@ -218,9 +227,10 @@ After **`systemctl enable --now irpete-catalog`** works once:
 2. Within **~1–3 minutes** (typical LAN + DHCP), from another host:
 
    ```bash
-   curl -sS --resolve catalog.toomanyprojects.dev:8443:192.168.x.x \
-     "https://catalog.toomanyprojects.dev:8443/v1/health" \
-     -H "Authorization: Bearer <IRPETE_API_KEY>"
+   set -a && source /etc/irpete/catalog.env && set +a
+   curl -sS --resolve "${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}:${IRPETE_LAN_IP}" \
+     "https://${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}/v1/health" \
+     -H "Authorization: Bearer ${IRPETE_API_KEY}"
    ```
 
    Expect **`{"status":"ok"}`** (or your app’s health JSON) and **HTTP 200**.
