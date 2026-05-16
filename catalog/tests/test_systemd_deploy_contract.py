@@ -43,6 +43,9 @@ def test_deploy_env_example_lists_tls_and_listen_vars() -> None:
         "IRPETE_PORT",
         "IRPETE_TLS_CERTFILE",
         "IRPETE_TLS_KEYFILE",
+        "IRPETE_CATALOG_FQDN",
+        "IRPETE_EMITTER_FQDN",
+        "IRPETE_LAN_IP",
     ):
         assert key in text, f"deploy/catalog.env.example must document {key}"
 

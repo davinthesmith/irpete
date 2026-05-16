@@ -156,7 +156,7 @@ Expect JSON with **`"status":"ok"`** (or equivalent health payload).
 
 Operators typically:
 
-1. Point DNS (**A/AAAA**) at the Pi for **`catalog.<your-domain>`** (example in docs: `catalog.toomanyprojects.dev`).
+1. Point DNS (**A/AAAA**) at the Pi for **`IRPETE_CATALOG_FQDN`** (see [`catalog/.env.example`](catalog/.env.example); placeholder: `catalog.home.example`).
 2. Install **fullchain** + **privkey** PEM on the Pi (e.g. `/etc/irpete/`), **`chmod 600`** on the key.
 3. Create **`/etc/irpete/catalog.env`** from [`catalog/deploy/catalog.env.example`](catalog/deploy/catalog.env.example) with **`IRPETE_API_KEY`**, **`IRPETE_TLS_CERTFILE`**, **`IRPETE_TLS_KEYFILE`**, **`IRPETE_HOST=0.0.0.0`**, **`IRPETE_PORT=8443`**, and optional **`IRPETE_DB_PATH`** (absolute path recommended).
 4. Install the systemd unit from [`catalog/deploy/systemd/irpete-catalog.service`](catalog/deploy/systemd/irpete-catalog.service), adjust **`WorkingDirectory`** / **`ExecStart`** to your venv, then:
@@ -213,7 +213,7 @@ Edit **`include/secrets.h`** (gitignored):
 |--------|---------|
 | `WIFI_SSID` / `WIFI_PASSWORD` | LAN join |
 | `IRPETE_API_KEY` | **Same** as Catalog’s `IRPETE_API_KEY` |
-| `CATALOG_HOST` / `CATALOG_PORT` | Catalog HTTPS hostname and port |
+| `CATALOG_HOST` / `CATALOG_PORT` | Same values as **`IRPETE_CATALOG_FQDN`** / **`IRPETE_PORT`** in Catalog’s env file |
 | `CATALOG_LABEL` | Default label for boot test + serial **`s`** replay |
 | `CATALOG_CA_PEM` | Trust anchor verifying Catalog’s cert (often **CA**, not leaf) |
 | `EMITTER_SERVER_CERT_PEM` / `EMITTER_SERVER_PRIVATE_KEY_PEM` | Emitter’s HTTPS server identity |
@@ -245,16 +245,16 @@ Prerequisites:
 - Emitter can resolve **`CATALOG_HOST`** and validate TLS with **`CATALOG_CA_PEM`**.
 - Your **`curl`** trusts Emitter’s server cert (for dev self-signed from `secrets.h.example`, pass that cert as **`--cacert`**).
 
-Example (adjust IP, hostname, key, label, cert path):
+Example (load hostnames from Catalog’s env file; adjust label and **`--cacert`** path):
 
 ```bash
-export IRPETE_API_KEY='your-secret'
+set -a && source /path/to/catalog/.env && set +a
 curl -v --cacert emitter-server-cert.pem \
-  --resolve emitter.toomanyprojects.dev:8443:192.168.1.50 \
-  -H "Authorization: Bearer $IRPETE_API_KEY" \
+  --resolve "${IRPETE_EMITTER_FQDN}:${EMITTER_HTTPS_PORT:-8443}:${IRPETE_LAN_IP}" \
+  -H "Authorization: Bearer ${IRPETE_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"label":"tv_power","kind":"ir"}' \
-  https://emitter.toomanyprojects.dev:8443/v1/play
+  "https://${IRPETE_EMITTER_FQDN}:${EMITTER_HTTPS_PORT:-8443}/v1/play"
 ```
 
 HTTP outcomes (401 / 404 / 409 / 502 / 503): [`firmware/emitter/README.md`](firmware/emitter/README.md).
@@ -277,12 +277,13 @@ Run **after** the ordered build steps in [`plans/build/README.md`](plans/build/R
 
 ### 6.2 Catalog — DNS and HTTPS
 
-From the **laptop** (not `curl -k`; certificate validation must succeed). Replace `<API_KEY>` with `IRPETE_API_KEY`, `<PORT>` with Catalog’s listen port (recommended **8443**), and set the IP if you use `--resolve`:
+From the **laptop** (not `curl -k`; certificate validation must succeed). Source Catalog’s env file (e.g. copy of [`catalog/deploy/catalog.env.example`](catalog/deploy/catalog.env.example) with real values):
 
 ```bash
-curl -v --resolve catalog.toomanyprojects.dev:<PORT>:<PI_LAN_IP> \
-  "https://catalog.toomanyprojects.dev:<PORT>/v1/health" \
-  -H "Authorization: Bearer <API_KEY>"
+set -a && source /path/to/catalog.env && set +a
+curl -v --resolve "${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}:${IRPETE_LAN_IP}" \
+  "https://${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}/v1/health" \
+  -H "Authorization: Bearer ${IRPETE_API_KEY}"
 ```
 
 - [ ] **200** with JSON `{"status":"ok"}` (or equivalent per implementation).
@@ -292,11 +293,11 @@ curl -v --resolve catalog.toomanyprojects.dev:<PORT>:<PI_LAN_IP> \
 Optional TLS inspection:
 
 ```bash
-openssl s_client -connect catalog.toomanyprojects.dev:<PORT> \
-  -servername catalog.toomanyprojects.dev </dev/null
+openssl s_client -connect "${IRPETE_CATALOG_FQDN}:${IRPETE_PORT}" \
+  -servername "${IRPETE_CATALOG_FQDN}" </dev/null
 ```
 
-- [ ] Presented chain matches what you installed; **SAN** matches **`catalog.toomanyprojects.dev`** (or your chosen hostname).
+- [ ] Presented chain matches what you installed; **SAN** matches **`IRPETE_CATALOG_FQDN`**.
 
 If verification fails, see [`catalog/README.md`](catalog/README.md) (clock skew, incomplete chain, wrong hostname).
 
