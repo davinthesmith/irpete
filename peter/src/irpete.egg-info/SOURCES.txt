@@ -21,5 +21,6 @@ tests/test_api.py
 tests/test_capture_cli.py
 tests/test_capture_state.py
 tests/test_config.py
+tests/test_https.py
 tests/test_repository.py
 tests/test_validate.py

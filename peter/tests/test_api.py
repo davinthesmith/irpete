@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from starlette.testclient import TestClient
+
+from irpete.app import create_app
+from irpete.config import Settings
 
 from irpete.validate import LEADING_GAP_US, MAX_RAW_ELEMENTS
 
@@ -25,6 +29,17 @@ def _sample_envelope(label: str = "tv_power") -> dict[str, Any]:
 def test_health_missing_auth(client: TestClient) -> None:
     r = client.get("/v1/health")
     assert r.status_code == 401
+
+
+def test_openapi_routes_hidden_when_disabled(settings: Settings, api_key: str) -> None:
+    s = replace(settings, disable_openapi=True)
+    with TestClient(create_app(s)) as client:
+        assert client.get("/docs").status_code == 404
+        assert client.get("/redoc").status_code == 404
+        assert client.get("/openapi.json").status_code == 404
+        assert (
+            client.get("/v1/health", headers=auth(api_key)).status_code == 200
+        )
 
 
 def test_health_wrong_key(client: TestClient, api_key: str) -> None:

@@ -1,8 +1,10 @@
-# IRPete — Peter (Stages 1–2)
+# IRPete — Peter (Stages 1–3)
 
 Peter exposes a versioned JSON **envelope** API backed by **SQLite (WAL)**. Authentication is a single shared **`IRPETE_API_KEY`** passed as `Authorization: Bearer <token>` on **every** `/v1` route, including **`GET /v1/health`**.
 
 Stage 2 adds the **`irpete-capture`** CLI on the Raspberry Pi: record TSOP pulse timings (RAM until `stop`), then **`validate`** / **`preview`** / **`commit`** using the **same** Pydantic rules and SQLite upsert as `POST /v1/signals`.
+
+Stage 3 adds **HTTPS on the LAN** via Uvicorn **`ssl_certfile` / `ssl_keyfile`** when **`IRPETE_TLS_CERTFILE`** and **`IRPETE_TLS_KEYFILE`** are set (paths to PEM files). Leave both unset for **local HTTP only** (`127.0.0.1`, default port **8000**).
 
 Shared contract: [`plans/build/REFERENCE.md`](../plans/build/REFERENCE.md).
 
@@ -29,6 +31,101 @@ uvicorn irpete.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
 The API listens on **`IRPETE_HOST` / `IRPETE_PORT`** (defaults **`127.0.0.1:8000`**). SQLite defaults to **`data/irpete.db`** under `peter/` when **`IRPETE_DB_PATH`** is unset.
+
+## Stage 3 — HTTPS on the LAN (`peter.toomanyprojects.dev`)
+
+Production-style TLS is a **deployment** concern: the FastAPI app is unchanged; Uvicorn loads **`IRPETE_TLS_CERTFILE`** (fullchain PEM) and **`IRPETE_TLS_KEYFILE`** (private key PEM). Recommended listen port is **8443** so the process does not need **`CAP_NET_BIND_SERVICE`** for port **443**.
+
+### Prerequisites
+
+- **DNS:** An **A** (and optionally **AAAA**) record for **`peter.toomanyprojects.dev`** pointing at the Raspberry Pi’s **LAN** address (split-horizon DNS is fine).
+- **Certificates:** A wildcard **`*.toomanyprojects.dev`** or a dedicated leaf whose **SAN** includes **`peter.toomanyprojects.dev`**. Install **fullchain** + **private key** on the Pi (example paths: `/etc/irpete/fullchain.pem`, `/etc/irpete/privkey.pem`).
+- **Permissions:** `chmod 600` on the private key; restrict directory listing as usual.
+- **Clock:** TLS validation fails if the Pi’s clock is wrong—use **NTP** (`timedatectl`).
+
+### Environment (HTTPS)
+
+Set **`IRPETE_API_KEY`**, **`IRPETE_TLS_CERTFILE`**, **`IRPETE_TLS_KEYFILE`**, and typically:
+
+```bash
+export IRPETE_HOST=0.0.0.0
+export IRPETE_PORT=8443
+```
+
+Optional: **`IRPETE_DISABLE_OPENAPI=1`** to disable **`/docs`**, **`/redoc`**, and **`/openapi.json`** on networks where Swagger UI is unnecessary.
+
+### Run with TLS
+
+From `peter/` after `pip install -e ".[dev]"` and loading secrets from `.env`:
+
+```bash
+./scripts/run-peter-https.sh
+```
+
+Or explicitly:
+
+```bash
+export IRPETE_API_KEY=…
+export IRPETE_TLS_CERTFILE=/etc/irpete/fullchain.pem
+export IRPETE_TLS_KEYFILE=/etc/irpete/privkey.pem
+export IRPETE_HOST=0.0.0.0
+export IRPETE_PORT=8443
+python -m irpete.main
+```
+
+### Verify from another machine (full TLS verification, no `-k`)
+
+Replace `<token>` with **`IRPETE_API_KEY`** (and **`8443`** if that is your listen port):
+
+```bash
+curl -v --resolve peter.toomanyprojects.dev:8443:192.168.x.x \
+  "https://peter.toomanyprojects.dev:8443/v1/health" \
+  -H "Authorization: Bearer <token>"
+```
+
+If DNS already resolves to the Pi on your LAN, omit **`--resolve`**. Expect **`HTTP/1.1 200`** (or HTTP/2) and JSON **`{"status":"ok"}`**.
+
+Wrong or missing Bearer:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "https://peter.toomanyprojects.dev:8443/v1/health"
+# expect 401
+```
+
+### Troubleshooting TLS
+
+| Symptom | Likely cause |
+|--------|----------------|
+| `certificate verify failed` | Wrong hostname vs SAN, incomplete chain on disk, or clock skew on client/Pi |
+| Connection refused | Firewall, wrong **`IRPETE_HOST`/`PORT`**, or service not running |
+
+Inspect the certificate chain:
+
+```bash
+openssl s_client -connect peter.toomanyprojects.dev:8443 -servername peter.toomanyprojects.dev </dev/null
+```
+
+### CA PEM for Pete firmware (Stage 5)
+
+ESP8266/BearSSL needs a **trust anchor**—usually the **issuing CA** PEM (not the leaf). Operators keep a copy as e.g. **`certs/peter-ca.pem`** (gitignored); Pete embeds bytes in **`secrets.h`** or SPIFFS later.
+
+**If you already have the issuer CA file from your PKI**, copy it verbatim to **`peter-ca.pem`**.
+
+**If you only have the server fullchain** (leaf + intermediates), inspect PEM subjects and extract the issuer certificate your clients trust:
+
+```bash
+openssl crl2pkcs7 -nocrl -certfile /etc/irpete/fullchain.pem \
+  | openssl pkcs7 -print_certs -noout
+```
+
+Sanity check issuer vs subject on the leaf:
+
+```bash
+openssl x509 -in /etc/irpete/fullchain.pem -noout -issuer -subject
+```
+
+Document which PEM you embedded so rotations stay predictable: Pete trusts the **CA**, so **leaf rotation** does not require a firmware change as long as the new leaf chains to the same anchor.
 
 ## Stage 2 — manual IR capture CLI (`irpete-capture`)
 
@@ -80,7 +177,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-## Envelope semantics (Stages 1–2)
+## Envelope semantics (Stages 1–3)
 
 - **`POST /v1/signals`** **upserts by `label`** (same label replaces the stored envelope).
 - **`raw_us` mark-first normalization:** IRremoteESP8266 `sendRaw` expects the first entry to be a **mark**. On POST, if the first duration is **greater than 50 ms**, it is treated as a leading idle gap and **removed once** so the stored array starts with a mark-oriented timing sequence. Values must fit **uint16** on the wire (1–65535 µs per element). Length is capped at **512** elements for v1.
